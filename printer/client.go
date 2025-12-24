@@ -16,7 +16,8 @@ type Client struct {
 	readStop      chan struct{}
 	logListeners  []func(string)
 	tempListeners []func(hCurrent, hTarget, bCurrent, bTarget string)
-	tempBuf       string
+	bedListeners  []func(string)
+	lineBuf       string
 	monitoring    bool
 }
 
@@ -34,6 +35,19 @@ func (c *Client) AddTempListener(f func(hCurrent, hTarget, bCurrent, bTarget str
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.tempListeners = append(c.tempListeners, f)
+}
+
+func (c *Client) AddBedLevelListener(f func(string)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bedListeners = append(c.bedListeners, f)
+}
+
+// ClearLineBuffer drops any partially buffered serial data.
+func (c *Client) ClearLineBuffer() {
+	c.mu.Lock()
+	c.lineBuf = ""
+	c.mu.Unlock()
 }
 
 func (c *Client) IsConnected() bool {
@@ -140,6 +154,29 @@ func (c *Client) PreheatBed(temp float64) error {
 	return c.SendRaw(fmt.Sprintf("M140 S%.0f", temp))
 }
 
+func (c *Client) RunBedLevelingRoutine() error {
+	cmds := []string{
+		"M501",
+		"M851",
+		"G28",
+		"G29 P1",
+		"G29 P3",
+		"G29 S0",
+		"G29 L0",
+		"M420 S1",
+	}
+	for _, cmd := range cmds {
+		if err := c.SendRaw(cmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) PrintValidationPattern() error {
+	return c.SendRaw("G26 H220 P0.5 L0.15")
+}
+
 // internal
 func (c *Client) readLoop(port goserial.Port, stop <-chan struct{}) {
 	buf := make([]byte, 1024)
@@ -166,7 +203,7 @@ func (c *Client) readLoop(port goserial.Port, stop <-chan struct{}) {
 		}
 		data := string(buf[:n])
 		c.broadcastLog(data)
-		c.consumeTempData(data, reHot, reBed)
+		c.consumeDataLines(data, reHot, reBed)
 	}
 }
 
@@ -188,24 +225,43 @@ func (c *Client) broadcastTemp(hCurrent, hTarget, bCurrent, bTarget string) {
 	}
 }
 
-func (c *Client) consumeTempData(chunk string, reHot, reBed *regexp.Regexp) {
-	c.tempBuf += chunk
-	lines := strings.Split(c.tempBuf, "\n")
-	c.tempBuf = lines[len(lines)-1]
+func (c *Client) consumeDataLines(chunk string, reHot, reBed *regexp.Regexp) {
+	c.lineBuf += chunk
+	lines := strings.Split(c.lineBuf, "\n")
+	c.lineBuf = lines[len(lines)-1]
+	complete := lines[:len(lines)-1]
+
+	for _, line := range complete {
+		c.consumeTempLine(line, reHot, reBed)
+		c.consumeBedLine(line)
+	}
+}
+
+func (c *Client) consumeTempLine(line string, reHot, reBed *regexp.Regexp) {
 	if !c.monitoring {
 		return
 	}
-	for _, line := range lines[:len(lines)-1] {
-		var hcur, htar, bcur, btar string
-		if m := reHot.FindStringSubmatch(line); len(m) == 3 {
-			hcur, htar = m[1], m[2]
-		}
-		if m := reBed.FindStringSubmatch(line); len(m) == 3 {
-			bcur, btar = m[1], m[2]
-		}
-		if hcur != "" || bcur != "" {
-			c.broadcastTemp(hcur, htar, bcur, btar)
-		}
+	var hcur, htar, bcur, btar string
+	if m := reHot.FindStringSubmatch(line); len(m) == 3 {
+		hcur, htar = m[1], m[2]
+	}
+	if m := reBed.FindStringSubmatch(line); len(m) == 3 {
+		bcur, btar = m[1], m[2]
+	}
+	if hcur != "" || bcur != "" {
+		c.broadcastTemp(hcur, htar, bcur, btar)
+	}
+}
+
+func (c *Client) consumeBedLine(line string) {
+	c.mu.Lock()
+	listeners := append([]func(string){}, c.bedListeners...)
+	c.mu.Unlock()
+	if len(listeners) == 0 {
+		return
+	}
+	for _, f := range listeners {
+		f(line)
 	}
 }
 

@@ -25,6 +25,7 @@ type serialUI struct {
 	serialTabUI   *serialTab
 	zTabUI        *zOffsetTab
 	tempTabUI     *tempTab
+	bedTabUI      *bedLevelTab
 
 	ports     []string
 	baudRates []int
@@ -78,6 +79,9 @@ func (s *serialUI) buildUI() {
 	s.tempTabUI = newTempTab(s.client)
 	s.tab.Append("Temperature", s.tempTabUI.Build())
 	s.tab.SetMargined(2, true)
+	s.bedTabUI = newBedLevelTab(s.client)
+	s.tab.Append("Bed Leveling", s.bedTabUI.Build())
+	s.tab.SetMargined(3, true)
 	mainBox.Append(s.tab, true)
 
 	s.refreshPorts()
@@ -224,6 +228,9 @@ func (s *serialUI) updateConnectionUI(connected bool) {
 	}
 	if s.tempTabUI != nil {
 		s.tempTabUI.OnConnectionChanged(connected)
+	}
+	if s.bedTabUI != nil {
+		s.bedTabUI.OnConnectionChanged(connected)
 	}
 }
 
