@@ -1,0 +1,77 @@
+name: build-macos-app
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          check-latest: true
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build app bundle
+        env:
+          APP_BUNDLE: PrinterCalibrationUtility.app
+          APP_EXECUTABLE: PrinterCalibrationUtility
+          DIST: dist
+          CGO_ENABLED: "1"
+          GOOS: darwin
+          GOARCH: amd64
+        run: |
+          set -eux
+          mkdir -p "$DIST/$APP_BUNDLE/Contents/MacOS"
+          mkdir -p "$DIST/$APP_BUNDLE/Contents/Resources"
+
+          cat > "$DIST/$APP_BUNDLE/Contents/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+            <dict>
+              <key>CFBundleExecutable</key>
+              <string>PrinterCalibrationUtility</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.example.printercalibrationutility</string>
+              <key>CFBundleName</key>
+              <string>Printer Calibration Utility</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleVersion</key>
+              <string>1.0</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+            </dict>
+          </plist>
+          EOF
+
+          go env
+          go build -o "$DIST/$APP_BUNDLE/Contents/MacOS/$APP_EXECUTABLE" .
+
+      - name: Zip app bundle
+        env:
+          DIST: dist
+          APP_BUNDLE: PrinterCalibrationUtility.app
+        run: |
+          set -eux
+          cd "$DIST"
+          zip -r "PrinterCalibrationUtility-macos.zip" "$APP_BUNDLE"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrinterCalibrationUtility-macos
+          path: dist/PrinterCalibrationUtility-macos.zip

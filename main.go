@@ -9,7 +9,7 @@ import (
 	_ "github.com/andlabs/ui/winmanifest"
 	"go.bug.st/serial"
 
-	"l2ui/printer"
+	"github.com/nulldozer/printer-calibration-utility/printer"
 )
 
 type serialUI struct {

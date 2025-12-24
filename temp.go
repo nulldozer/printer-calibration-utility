@@ -7,7 +7,7 @@ import (
 
 	"github.com/andlabs/ui"
 
-	"l2ui/printer"
+	"github.com/nulldozer/printer-calibration-utility/printer"
 )
 
 type tempTab struct {
