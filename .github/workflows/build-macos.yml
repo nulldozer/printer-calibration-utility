@@ -77,3 +77,20 @@ jobs:
         with:
           name: PrinterCalibrationUtility-macos
           path: dist/PrinterCalibrationUtility-macos.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: PrinterCalibrationUtility-macos
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: PrinterCalibrationUtility-macos.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
